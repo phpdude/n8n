@@ -1,27 +1,16 @@
 FROM ghcr.io/n8n-io/n8n:latest
 
 USER root
-RUN mkdir -p /home/node/.n8n /home/node/.npm-cache \
-  && chown -R node:node /home/node/.n8n /home/node/.npm-cache
+
+# 1) Ставим pdf-lib туда, откуда внутренний task-runner реально резолвит require()
+#    Node resolution идет от dist/start.js -> ../ (package root) -> ./node_modules
+RUN set -eux; \
+  RUNNER_DIR="/usr/local/lib/node_modules/n8n/node_modules/@n8n/task-runner"; \
+  test -d "$RUNNER_DIR" || (echo "Task runner dir not found: $RUNNER_DIR" && exit 1); \
+  npm install --prefix "$RUNNER_DIR" --omit=dev --no-fund --no-audit pdf-lib; \
+  node -e "process.chdir('$RUNNER_DIR/dist'); require('pdf-lib'); console.log('pdf-lib OK from task-runner/dist')"
 
 USER node
-ENV HOME=/home/node
-ENV NPM_CONFIG_CACHE=/home/node/.npm-cache
-WORKDIR /home/node/.n8n
 
-# Создаём package.json вручную (npm init в .n8n падает из-за invalid name)
-RUN if [ ! -f package.json ]; then \
-      printf '%s\n' \
-        '{' \
-        '  "name": "n8n-user-data",' \
-        '  "private": true,' \
-        '  "version": "1.0.0",' \
-        '  "description": "n8n user data deps",' \
-        '  "dependencies": {}' \
-        '}' > package.json; \
-    fi
-
-RUN npm install --omit=dev --no-fund --no-audit pdf-lib \
-  && npm cache clean --force
-
-WORKDIR /home/node
+# (не обязательно) можно задать NODE_PATH, но после установки выше оно уже не нужно
+# ENV NODE_PATH=/home/node/.n8n/node_modules
